@@ -10,6 +10,19 @@
 - .NET framework 4.5 or newer from [Microsoft](https://www.microsoft.com/net/download/thank-you/net471);
 - DirectX 11 and Shader Model 4.0 capable graphics.
 
+## CLI Usage (CodeWalkerCLI)
+- Build/run: `dotnet run --project CodeWalkerCLI/CodeWalkerCLI.csproj -- info`
+- Default output is JSON, use `--xml` for XML output.
+- Global option: `--gtafolder <path>` (required for archive/game-file commands).
+- Supported commands:
+  - `info`
+  - `version`
+  - `rpf list`
+  - `rpf extract --archive <archive.rpf> --entry <entryPath> --output <path>`
+  - `file info --path <localFileOrRpfEntryPath>`
+  - `file export --path <rpfEntryPath> --output <path>`
+  - `search --pattern <text> [--limit <n>]`
+
 # App Usage:
 On first startup, the app will prompt to browse for the GTA:V game folder. If you have the Steam version installed
 in the default location `(C:\Program Files (x86)\Steam\SteamApps\common\Grand Theft Auto V)`, then this step will be skipped automatically.

@@ -106,8 +106,7 @@ internal sealed class CommandContext
 
         GTA5Keys.LoadFromPath(folder);
         var manager = new RpfManager();
-        var errors = new List<string>();
-        manager.Init(folder, false, _ => { }, e => errors.Add(e), buildIndex: false);
+        manager.Init(folder, false, _ => { }, _ => { }, buildIndex: false);
 
         if (!manager.IsInited)
         {
@@ -303,18 +302,7 @@ internal sealed class RpfCommand : ICliCommand
             return CommandResult.Error($"Failed to extract entry: {entry.Path}");
         }
 
-        var targetPath = outputPath;
-        if (Directory.Exists(outputPath) || outputPath.EndsWith(Path.DirectorySeparatorChar) || outputPath.EndsWith(Path.AltDirectorySeparatorChar))
-        {
-            targetPath = Path.Combine(outputPath, entry.Name);
-        }
-
-        string? targetDirectory = Path.GetDirectoryName(targetPath);
-        if (!string.IsNullOrEmpty(targetDirectory))
-        {
-            Directory.CreateDirectory(targetDirectory);
-        }
-
+        var targetPath = OutputPathResolver.ResolveAndCreate(outputPath, entry.Name);
         File.WriteAllBytes(targetPath, bytes);
 
         return CommandResult.Ok("Entry extracted.", new
@@ -399,43 +387,20 @@ internal sealed class FileCommand : ICliCommand
             return CommandResult.Error($"Failed to load file data for export: {entry.Path}");
         }
 
-        string exportedFormat;
-        string? xml = MetaXml.GetXml(entry, data, out _, Path.GetDirectoryName(outputPath) ?? string.Empty);
-        if (!string.IsNullOrEmpty(xml))
+        var exportedFormat = "raw";
+        var exportedXml = MetaXml.GetXml(entry, data, out _, Path.GetDirectoryName(outputPath) ?? string.Empty);
+        if (!string.IsNullOrEmpty(exportedXml))
         {
-            var target = outputPath;
-            if (Directory.Exists(outputPath) || outputPath.EndsWith(Path.DirectorySeparatorChar) || outputPath.EndsWith(Path.AltDirectorySeparatorChar))
-            {
-                target = Path.Combine(outputPath, entry.Name + ".xml");
-            }
-
-            string? targetDirectory = Path.GetDirectoryName(target);
-            if (!string.IsNullOrEmpty(targetDirectory))
-            {
-                Directory.CreateDirectory(targetDirectory);
-            }
-
-            File.WriteAllText(target, xml);
+            var target = OutputPathResolver.ResolveAndCreate(outputPath, entry.Name + ".xml");
+            File.WriteAllText(target, exportedXml);
             outputPath = target;
             exportedFormat = "xml";
         }
         else
         {
-            var target = outputPath;
-            if (Directory.Exists(outputPath) || outputPath.EndsWith(Path.DirectorySeparatorChar) || outputPath.EndsWith(Path.AltDirectorySeparatorChar))
-            {
-                target = Path.Combine(outputPath, entry.Name);
-            }
-
-            string? targetDirectory = Path.GetDirectoryName(target);
-            if (!string.IsNullOrEmpty(targetDirectory))
-            {
-                Directory.CreateDirectory(targetDirectory);
-            }
-
+            var target = OutputPathResolver.ResolveAndCreate(outputPath, entry.Name);
             File.WriteAllBytes(target, data);
             outputPath = target;
-            exportedFormat = "raw";
         }
 
         return CommandResult.Ok("File exported.", new
@@ -506,9 +471,8 @@ internal sealed class SearchCommand : ICliCommand
         var options = OptionParser.Parse(args);
         var pattern = options.GetRequired("pattern");
         var limitText = options.Get("limit");
-        var limit = 100;
-
-        if (!string.IsNullOrWhiteSpace(limitText) && (!int.TryParse(limitText, out limit) || limit <= 0))
+        var limit = ParseLimit(limitText);
+        if (limit <= 0)
         {
             return CommandResult.Error("Invalid --limit value. It must be a positive integer.");
         }
@@ -517,7 +481,6 @@ internal sealed class SearchCommand : ICliCommand
         var matches = manager.EntryDict
             .Where(kv => kv.Key.Contains(pattern, StringComparison.OrdinalIgnoreCase))
             .Select(kv => kv.Key)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(x => x)
             .Take(limit)
             .ToArray();
@@ -528,6 +491,16 @@ internal sealed class SearchCommand : ICliCommand
             limit,
             matches
         });
+    }
+
+    private static int ParseLimit(string? limitText)
+    {
+        if (string.IsNullOrWhiteSpace(limitText))
+        {
+            return 100;
+        }
+
+        return int.TryParse(limitText, out var limit) ? limit : -1;
     }
 }
 
@@ -625,5 +598,25 @@ internal sealed class CliOptions
             GtaFolder = gtaFolder,
             CommandArgs = remaining.ToArray()
         };
+    }
+}
+
+internal static class OutputPathResolver
+{
+    public static string ResolveAndCreate(string outputPath, string fileName)
+    {
+        var targetPath = outputPath;
+        if (Directory.Exists(outputPath) || outputPath.EndsWith(Path.DirectorySeparatorChar) || outputPath.EndsWith(Path.AltDirectorySeparatorChar))
+        {
+            targetPath = Path.Combine(outputPath, fileName);
+        }
+
+        var targetDirectory = Path.GetDirectoryName(targetPath);
+        if (!string.IsNullOrEmpty(targetDirectory))
+        {
+            Directory.CreateDirectory(targetDirectory);
+        }
+
+        return targetPath;
     }
 }

@@ -307,7 +307,7 @@ internal sealed class InfoCommand : ICliCommand
             new { name = "info", usage = "CodeWalkerCLI info", description = "Display application info and command list" },
             new { name = "version", usage = "CodeWalkerCLI version", description = "Display CodeWalkerCLI and CodeWalker.Core versions" },
             new { name = "rpf list", usage = "CodeWalkerCLI --gtafolder <path> rpf list", description = "List discovered RPF archives" },
-            new { name = "rpf inspect", usage = "CodeWalkerCLI --gtafolder <path> rpf inspect <stats|files|child|defrag-size|defragment-size> --archive <archive.rpf> ...", description = "Inspect RPF archive structure and sizes" },
+            new { name = "rpf inspect", usage = "CodeWalkerCLI --gtafolder <path> rpf inspect <stats|files|child|defrag-size|defragment-size (alias)> --archive <archive.rpf> ...", description = "Inspect RPF archive structure and sizes" },
             new { name = "rpf extract", usage = "CodeWalkerCLI --gtafolder <path> rpf extract [file] --archive <archive.rpf> --entry <entryPath> --output <path>", description = "Extract one file from an RPF archive" },
             new { name = "rpf extract scripts", usage = "CodeWalkerCLI --gtafolder <path> rpf extract scripts --archive <archive.rpf> --output <path>", description = "Extract .ysc scripts recursively" },
             new { name = "rpf extract test-all", usage = "CodeWalkerCLI --gtafolder <path> rpf extract test-all --archive <archive.rpf>", description = "Run extraction diagnostics for all archive files" },
@@ -1027,7 +1027,7 @@ internal sealed class RpfCommand : ICliCommand
     }
 
     private static string NormalizePath(string path) =>
-        path.Replace('\\', '/').Replace('/', '\\').Trim().ToLowerInvariant();
+        path.Replace('/', '\\').Trim().ToLowerInvariant();
 }
 
 internal sealed class FileCommand : ICliCommand
@@ -1144,25 +1144,25 @@ internal sealed class FileCommand : ICliCommand
             switch (ext)
             {
                 case ".ymap":
-                    var ymap = RpfFile.GetFile<YmapFile>(entry, data);
-                    details["entities"] = ymap?.AllEntities?.Length ?? 0;
-                    details["carGenerators"] = ymap?.CarGenerators?.Length ?? 0;
+                    var ymapFile = RpfFile.GetFile<YmapFile>(entry, data);
+                    details["entities"] = ymapFile?.AllEntities?.Length ?? 0;
+                    details["carGenerators"] = ymapFile?.CarGenerators?.Length ?? 0;
                     break;
                 case ".ytyp":
-                    var ytyp = RpfFile.GetFile<YtypFile>(entry, data);
-                    details["archetypes"] = ytyp?.AllArchetypes?.Length ?? 0;
+                    var ytypFile = RpfFile.GetFile<YtypFile>(entry, data);
+                    details["archetypes"] = ytypFile?.AllArchetypes?.Length ?? 0;
                     break;
                 case ".ybn":
-                    var ybn = RpfFile.GetFile<YbnFile>(entry, data);
-                    details["hasBounds"] = ybn?.Bounds != null;
+                    var ybnFile = RpfFile.GetFile<YbnFile>(entry, data);
+                    details["hasBounds"] = ybnFile?.Bounds != null;
                     break;
                 case ".ydr":
-                    var ydr = RpfFile.GetFile<YdrFile>(entry, data);
-                    details["hasDrawable"] = ydr?.Drawable != null;
+                    var ydrFile = RpfFile.GetFile<YdrFile>(entry, data);
+                    details["hasDrawable"] = ydrFile?.Drawable != null;
                     break;
                 case ".ydd":
-                    var ydd = RpfFile.GetFile<YddFile>(entry, data);
-                    details["drawables"] = ydd?.DrawableDict?.Drawables?.data_items?.Length ?? 0;
+                    var yddFile = RpfFile.GetFile<YddFile>(entry, data);
+                    details["drawables"] = yddFile?.DrawableDict?.Drawables?.data_items?.Length ?? 0;
                     break;
             }
         }

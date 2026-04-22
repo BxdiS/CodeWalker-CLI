@@ -212,6 +212,40 @@ internal sealed class CommandContext
         }
 
         GTA5Keys.LoadFromPath(folder);
+
+        // GTA5Keys.LoadFromPath uses embedded magic data which loads the NG decrypt tables
+        // but does not derive the NG encrypt tables. They are required when writing the
+        // table-of-contents header for NG-encrypted archives (e.g. update.rpf).
+        //
+        // Rounds 0, 1 and 16 use TABLES (solved via RandomGauss), while the middle rounds
+        // 2-15 use LUTs (built via LookUpTableGenerator). This mirrors the logic in
+        // GTA5Keys.Generate in CodeWalker.Core.
+        if (GTA5Keys.PC_NG_DECRYPT_TABLES != null
+            && GTA5Keys.PC_NG_DECRYPT_TABLES.Length == 17
+            && GTA5Keys.PC_NG_ENCRYPT_TABLES == null)
+        {
+            GTA5Keys.PC_NG_ENCRYPT_TABLES = new uint[17][][];
+            GTA5Keys.PC_NG_ENCRYPT_LUTs = new GTA5NGLUT[17][];
+            for (int i = 0; i < 17; i++)
+            {
+                GTA5Keys.PC_NG_ENCRYPT_TABLES[i] = new uint[16][];
+                GTA5Keys.PC_NG_ENCRYPT_LUTs[i] = new GTA5NGLUT[16];
+                for (int j = 0; j < 16; j++)
+                {
+                    GTA5Keys.PC_NG_ENCRYPT_TABLES[i][j] = new uint[256];
+                    GTA5Keys.PC_NG_ENCRYPT_LUTs[i][j] = new GTA5NGLUT();
+                }
+            }
+            // First two and last rounds: table-based encryption
+            GTA5Keys.PC_NG_ENCRYPT_TABLES[0] = RandomGauss.Solve(GTA5Keys.PC_NG_DECRYPT_TABLES[0]);
+            GTA5Keys.PC_NG_ENCRYPT_TABLES[1] = RandomGauss.Solve(GTA5Keys.PC_NG_DECRYPT_TABLES[1]);
+            // Middle rounds 2-15: LUT-based encryption
+            for (int k = 2; k <= 15; k++)
+            {
+                GTA5Keys.PC_NG_ENCRYPT_LUTs[k] = LookUpTableGenerator.BuildLUTs2(GTA5Keys.PC_NG_DECRYPT_TABLES[k]);
+            }
+            GTA5Keys.PC_NG_ENCRYPT_TABLES[16] = RandomGauss.Solve(GTA5Keys.PC_NG_DECRYPT_TABLES[16]);
+        }
         var manager = new RpfManager();
         manager.Init(folder, false, _ => { }, _ => { }, buildIndex: false);
 

@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Reflection;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Xml.Linq;
@@ -13,7 +15,7 @@ internal static class Program
         var parse = CliOptions.Parse(args);
         if (!parse.Success)
         {
-            WriteResponse(CommandResult.Error(parse.ErrorMessage!), parse.Xml);
+            WriteResponse(CommandResult.Error(parse.ErrorMessage!), parse.OutputFormat, parse.Compact);
             return 1;
         }
 
@@ -21,11 +23,11 @@ internal static class Program
         var root = CommandRegistry.Create();
 
         var result = root.Execute(commandContext, parse.CommandArgs);
-        WriteResponse(result, parse.Xml);
+        WriteResponse(result, parse.OutputFormat, parse.Compact);
         return result.Success ? 0 : 1;
     }
 
-    private static void WriteResponse(CommandResult result, bool xml)
+    private static void WriteResponse(CommandResult result, OutputFormat outputFormat, bool compact)
     {
         var payload = new CliResponse
         {
@@ -35,19 +37,28 @@ internal static class Program
             ExitCode = result.Success ? 0 : 1
         };
 
-        if (xml)
+        var jsonOptions = GetJsonOptions(compact);
+
+        if (outputFormat == OutputFormat.Xml)
         {
-            using var doc = JsonDocument.Parse(JsonSerializer.Serialize(payload, JsonOptions));
+            using var doc = JsonDocument.Parse(JsonSerializer.Serialize(payload, jsonOptions));
             var root = new XElement("response");
             foreach (var prop in doc.RootElement.EnumerateObject())
             {
                 root.Add(ToXml(prop.Name, prop.Value));
             }
-            Console.WriteLine(new XDocument(root));
+            Console.WriteLine(compact ? root.ToString(SaveOptions.DisableFormatting) : new XDocument(root).ToString());
             return;
         }
 
-        Console.WriteLine(JsonSerializer.Serialize(payload, JsonOptions));
+        if (outputFormat == OutputFormat.Text)
+        {
+            using var doc = JsonDocument.Parse(JsonSerializer.Serialize(payload, jsonOptions));
+            Console.WriteLine(ToText(doc.RootElement, compact));
+            return;
+        }
+
+        Console.WriteLine(JsonSerializer.Serialize(payload, jsonOptions));
     }
 
     private static XElement ToXml(string name, JsonElement value)
@@ -64,11 +75,104 @@ internal static class Program
         };
     }
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
+    private static string ToText(JsonElement element, bool compact)
     {
-        WriteIndented = true,
+        if (compact)
+        {
+            var lines = new List<string>();
+            FlattenText(element, "$", lines);
+            return string.Join(Environment.NewLine, lines);
+        }
+
+        var sb = new StringBuilder();
+        WriteText(element, sb, 0);
+        return sb.ToString().TrimEnd();
+    }
+
+    private static void FlattenText(JsonElement element, string path, List<string> lines)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                foreach (var prop in element.EnumerateObject())
+                {
+                    FlattenText(prop.Value, $"{path}.{prop.Name}", lines);
+                }
+                break;
+            case JsonValueKind.Array:
+                var idx = 0;
+                foreach (var item in element.EnumerateArray())
+                {
+                    FlattenText(item, $"{path}[{idx}]", lines);
+                    idx++;
+                }
+                break;
+            default:
+                lines.Add($"{path}={ScalarToString(element)}");
+                break;
+        }
+    }
+
+    private static void WriteText(JsonElement element, StringBuilder sb, int depth)
+    {
+        var indent = new string(' ', depth * 2);
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                foreach (var prop in element.EnumerateObject())
+                {
+                    if (prop.Value.ValueKind is JsonValueKind.Object or JsonValueKind.Array)
+                    {
+                        sb.AppendLine($"{indent}{prop.Name}:");
+                        WriteText(prop.Value, sb, depth + 1);
+                    }
+                    else
+                    {
+                        sb.AppendLine($"{indent}{prop.Name}: {ScalarToString(prop.Value)}");
+                    }
+                }
+                break;
+            case JsonValueKind.Array:
+                foreach (var item in element.EnumerateArray())
+                {
+                    if (item.ValueKind is JsonValueKind.Object or JsonValueKind.Array)
+                    {
+                        sb.AppendLine($"{indent}-");
+                        WriteText(item, sb, depth + 1);
+                    }
+                    else
+                    {
+                        sb.AppendLine($"{indent}- {ScalarToString(item)}");
+                    }
+                }
+                break;
+            default:
+                sb.AppendLine($"{indent}{ScalarToString(element)}");
+                break;
+        }
+    }
+
+    private static string ScalarToString(JsonElement element) => element.ValueKind switch
+    {
+        JsonValueKind.String => element.GetString() ?? string.Empty,
+        JsonValueKind.True => "true",
+        JsonValueKind.False => "false",
+        JsonValueKind.Null or JsonValueKind.Undefined => string.Empty,
+        _ => element.ToString()
+    };
+
+    private static JsonSerializerOptions GetJsonOptions(bool compact) => new()
+    {
+        WriteIndented = !compact,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
+}
+
+internal enum OutputFormat
+{
+    Json,
+    Xml,
+    Text
 }
 
 internal sealed class CommandContext
@@ -200,7 +304,11 @@ internal sealed class InfoCommand : ICliCommand
             new { name = "info", usage = "CodeWalkerCLI info", description = "Display application info and command list" },
             new { name = "version", usage = "CodeWalkerCLI version", description = "Display CodeWalkerCLI and CodeWalker.Core versions" },
             new { name = "rpf list", usage = "CodeWalkerCLI --gtafolder <path> rpf list", description = "List discovered RPF archives" },
-            new { name = "rpf extract", usage = "CodeWalkerCLI --gtafolder <path> rpf extract --archive <archive.rpf> --entry <entryPath> --output <path>", description = "Extract one file from an RPF archive" },
+            new { name = "rpf inspect", usage = "CodeWalkerCLI --gtafolder <path> rpf inspect <stats|files|child|defrag-size> --archive <archive.rpf> ...", description = "Inspect RPF archive structure and sizes" },
+            new { name = "rpf extract", usage = "CodeWalkerCLI --gtafolder <path> rpf extract [file] --archive <archive.rpf> --entry <entryPath> --output <path>", description = "Extract one file from an RPF archive" },
+            new { name = "rpf extract scripts", usage = "CodeWalkerCLI --gtafolder <path> rpf extract scripts --archive <archive.rpf> --output <path>", description = "Extract .ysc scripts recursively" },
+            new { name = "rpf extract test-all", usage = "CodeWalkerCLI --gtafolder <path> rpf extract test-all --archive <archive.rpf>", description = "Run extraction diagnostics for all archive files" },
+            new { name = "rpf util", usage = "CodeWalkerCLI rpf util <compress|decompress|flags-from-size|flags-from-blocks|size-from-flags|version-from-flags|page-flags> ...", description = "Invoke RpfFile utility operations" },
             new { name = "file info", usage = "CodeWalkerCLI file info --path <localFile> OR CodeWalkerCLI --gtafolder <path> file info --path <rpfEntryPath>", description = "Get metadata for local or game files" },
             new { name = "file export", usage = "CodeWalkerCLI --gtafolder <path> file export --path <rpfEntryPath> --output <file>", description = "Export a game file (XML when supported, raw fallback)" },
             new { name = "search", usage = "CodeWalkerCLI --gtafolder <path> search --pattern <text> [--limit <n>]", description = "Search game archive entries" }
@@ -209,11 +317,13 @@ internal sealed class InfoCommand : ICliCommand
         return CommandResult.Ok("CodeWalkerCLI command help", new
         {
             application = "CodeWalkerCLI",
-            output = new { @default = "json", alternative = "xml via --xml" },
+            output = new { @default = "json", alternatives = "xml|text via --format" },
             globalOptions = new[]
             {
                 new { name = "--gtafolder", description = "Path to GTA V installation folder" },
-                new { name = "--xml", description = "Output XML instead of JSON" }
+                new { name = "--format", description = "Output format: json|xml|text" },
+                new { name = "--xml", description = "Backward compatible alias for --format xml" },
+                new { name = "--compact", description = "Output compact payload" }
             },
             commands
         });
@@ -242,7 +352,7 @@ internal sealed class RpfCommand : ICliCommand
 {
     public string Name => "rpf";
     public string Description => "RPF archive commands.";
-    public string Usage => "CodeWalkerCLI --gtafolder <path> rpf <list|extract> ...";
+    public string Usage => "CodeWalkerCLI --gtafolder <path> rpf <list|inspect|extract|util> ...";
 
     public CommandResult Execute(CommandContext context, IReadOnlyList<string> args)
     {
@@ -254,7 +364,9 @@ internal sealed class RpfCommand : ICliCommand
         return args[0].ToLowerInvariant() switch
         {
             "list" => List(context),
+            "inspect" => Inspect(context, args.Skip(1).ToArray()),
             "extract" => Extract(context, args.Skip(1).ToArray()),
+            "util" => Util(context, args.Skip(1).ToArray()),
             _ => CommandResult.Error($"Unknown rpf subcommand: {args[0]}", new { usage = Usage })
         };
     }
@@ -274,7 +386,99 @@ internal sealed class RpfCommand : ICliCommand
         return CommandResult.Ok($"Found {archives.Length} archive(s).", new { archives });
     }
 
+    private static CommandResult Inspect(CommandContext context, IReadOnlyList<string> args)
+    {
+        if (args.Count == 0)
+        {
+            return CommandResult.Error("Missing inspect subcommand.", new { usage = "CodeWalkerCLI --gtafolder <path> rpf inspect <stats|files|child|defrag-size> ..." });
+        }
+
+        var options = OptionParser.Parse(args.Skip(1).ToArray());
+        var manager = context.CreateRpfManager();
+        var archive = FindArchive(manager, options.GetRequired("archive"));
+
+        return args[0].ToLowerInvariant() switch
+        {
+            "stats" => CommandResult.Ok("Archive stats", new
+            {
+                archive = archive.Path,
+                archive.Name,
+                archive.FilePath,
+                archive.FileSize,
+                archive.Encryption,
+                archive.TotalFileCount,
+                archive.TotalFolderCount,
+                archive.TotalResourceCount,
+                archive.TotalBinaryFileCount,
+                archive.GrandTotalRpfCount,
+                archive.GrandTotalFileCount,
+                archive.GrandTotalFolderCount,
+                archive.GrandTotalResourceCount,
+                archive.GrandTotalBinaryFileCount,
+                topParent = archive.GetTopParent()?.Path,
+                physicalPath = archive.GetPhysicalFilePath()
+            }),
+            "files" => InspectFiles(archive, options),
+            "child" => InspectChild(archive, options),
+            "defrag-size" => InspectDefragSize(archive, options),
+            _ => CommandResult.Error($"Unknown inspect subcommand: {args[0]}")
+        };
+    }
+
+    private static CommandResult InspectFiles(RpfFile archive, OptionParser options)
+    {
+        var folder = options.Get("folder") ?? archive.Path;
+        var recurse = options.GetBool("recurse", false);
+        var files = archive.GetFiles(folder, recurse)
+            .Select(f => new { f.Path, f.Name, type = f.GetType().Name, size = f.GetFileSize() })
+            .OrderBy(f => f.Path)
+            .ToArray();
+
+        return CommandResult.Ok($"Found {files.Length} file(s).", new { archive = archive.Path, folder, recurse, files });
+    }
+
+    private static CommandResult InspectChild(RpfFile archive, OptionParser options)
+    {
+        var entryPath = options.GetRequired("entry");
+        var entry = FindFileEntry(archive, entryPath);
+        if (entry == null)
+        {
+            return CommandResult.Error($"Entry not found in archive: {entryPath}");
+        }
+
+        var child = archive.FindChildArchive(entry);
+        if (child == null)
+        {
+            return CommandResult.Error($"Child archive not found for entry: {entry.Path}");
+        }
+
+        return CommandResult.Ok("Child archive found.", new { entry = entry.Path, child.Name, child.Path, child.FileSize, child.Encryption });
+    }
+
+    private static CommandResult InspectDefragSize(RpfFile archive, OptionParser options)
+    {
+        var recursive = options.GetBool("recursive", true);
+        var size = archive.GetDefragmentedFileSize(recursive);
+        return CommandResult.Ok("Defragmented size computed.", new { archive = archive.Path, recursive, size });
+    }
+
     private static CommandResult Extract(CommandContext context, IReadOnlyList<string> args)
+    {
+        if (args.Count > 0 && !args[0].StartsWith("--", StringComparison.Ordinal))
+        {
+            return args[0].ToLowerInvariant() switch
+            {
+                "file" => ExtractFile(context, args.Skip(1).ToArray()),
+                "scripts" => ExtractScripts(context, args.Skip(1).ToArray()),
+                "test-all" => ExtractTestAll(context, args.Skip(1).ToArray()),
+                _ => CommandResult.Error($"Unknown extract subcommand: {args[0]}")
+            };
+        }
+
+        return ExtractFile(context, args);
+    }
+
+    private static CommandResult ExtractFile(CommandContext context, IReadOnlyList<string> args)
     {
         var options = OptionParser.Parse(args);
         var archivePath = options.GetRequired("archive");
@@ -313,6 +517,173 @@ internal sealed class RpfCommand : ICliCommand
             output = targetPath
         });
     }
+
+    private static CommandResult ExtractScripts(CommandContext context, IReadOnlyList<string> args)
+    {
+        var options = OptionParser.Parse(args);
+        var manager = context.CreateRpfManager();
+        var archive = FindArchive(manager, options.GetRequired("archive"));
+        var outputPath = options.GetRequired("output");
+        Directory.CreateDirectory(outputPath);
+
+        var log = new List<string>();
+        archive.ExtractScripts(outputPath, s => log.Add(s));
+
+        return CommandResult.Ok("Script extraction finished.", new
+        {
+            archive = archive.Path,
+            output = outputPath,
+            lastError = archive.LastError,
+            log = log.TakeLast(20).ToArray()
+        });
+    }
+
+    private static CommandResult ExtractTestAll(CommandContext context, IReadOnlyList<string> args)
+    {
+        var options = OptionParser.Parse(args);
+        var manager = context.CreateRpfManager();
+        var archive = FindArchive(manager, options.GetRequired("archive"));
+        var report = archive.TestExtractAllFiles();
+
+        return CommandResult.Ok("Archive test extraction finished.", new
+        {
+            archive = archive.Path,
+            extractedBytes = archive.ExtractedByteCount,
+            report
+        });
+    }
+
+    private static CommandResult Util(CommandContext context, IReadOnlyList<string> args)
+    {
+        if (args.Count == 0)
+        {
+            return CommandResult.Error("Missing util subcommand.", new { usage = "CodeWalkerCLI rpf util <compress|decompress|flags-from-size|flags-from-blocks|size-from-flags|version-from-flags|page-flags> ..." });
+        }
+
+        return args[0].ToLowerInvariant() switch
+        {
+            "compress" => UtilCompress(args.Skip(1).ToArray()),
+            "decompress" => UtilDecompress(context, args.Skip(1).ToArray()),
+            "flags-from-size" => UtilFlagsFromSize(args.Skip(1).ToArray()),
+            "flags-from-blocks" => UtilFlagsFromBlocks(args.Skip(1).ToArray()),
+            "size-from-flags" => UtilSizeFromFlags(args.Skip(1).ToArray()),
+            "version-from-flags" => UtilVersionFromFlags(args.Skip(1).ToArray()),
+            "page-flags" => UtilPageFlags(args.Skip(1).ToArray()),
+            _ => CommandResult.Error($"Unknown util subcommand: {args[0]}")
+        };
+    }
+
+    private static CommandResult UtilCompress(IReadOnlyList<string> args)
+    {
+        var options = OptionParser.Parse(args);
+        var input = options.GetRequired("input");
+        var output = options.GetRequired("output");
+        if (!File.Exists(input))
+        {
+            return CommandResult.Error($"Input file not found: {input}");
+        }
+
+        var source = File.ReadAllBytes(input);
+        var compressed = RpfFile.CompressBytes(source);
+        File.WriteAllBytes(output, compressed);
+        return CommandResult.Ok("Compression complete.", new { input, output, sourceBytes = source.Length, compressedBytes = compressed.Length });
+    }
+
+    private static CommandResult UtilDecompress(CommandContext context, IReadOnlyList<string> args)
+    {
+        var options = OptionParser.Parse(args);
+        var input = options.GetRequired("input");
+        var output = options.GetRequired("output");
+        var manager = context.CreateRpfManager();
+        var archive = FindArchive(manager, options.GetRequired("archive"));
+        if (!File.Exists(input))
+        {
+            return CommandResult.Error($"Input file not found: {input}");
+        }
+
+        var source = File.ReadAllBytes(input);
+        var decompressed = archive.DecompressBytes(source);
+        if (decompressed == null)
+        {
+            return CommandResult.Error("Decompression failed.", new { archive = archive.Path, archive.LastError });
+        }
+
+        File.WriteAllBytes(output, decompressed);
+        return CommandResult.Ok("Decompression complete.", new { archive = archive.Path, input, output, sourceBytes = source.Length, decompressedBytes = decompressed.Length });
+    }
+
+    private static CommandResult UtilFlagsFromSize(IReadOnlyList<string> args)
+    {
+        var options = OptionParser.Parse(args);
+        var size = int.Parse(options.GetRequired("size"), CultureInfo.InvariantCulture);
+        var version = uint.Parse(options.Get("version") ?? "0", CultureInfo.InvariantCulture);
+        var flags = RpfResourceFileEntry.GetFlagsFromSize(size, version);
+        return CommandResult.Ok("Flags computed from size.", new { size, version, flags, flagsHex = $"0x{flags:X8}" });
+    }
+
+    private static CommandResult UtilFlagsFromBlocks(IReadOnlyList<string> args)
+    {
+        var options = OptionParser.Parse(args);
+        var blockCount = uint.Parse(options.GetRequired("block-count"), CultureInfo.InvariantCulture);
+        var blockSize = uint.Parse(options.GetRequired("block-size"), CultureInfo.InvariantCulture);
+        var version = uint.Parse(options.Get("version") ?? "0", CultureInfo.InvariantCulture);
+        var flags = RpfResourceFileEntry.GetFlagsFromBlocks(blockCount, blockSize, version);
+        return CommandResult.Ok("Flags computed from blocks.", new { blockCount, blockSize, version, flags, flagsHex = $"0x{flags:X8}" });
+    }
+
+    private static CommandResult UtilSizeFromFlags(IReadOnlyList<string> args)
+    {
+        var options = OptionParser.Parse(args);
+        var flags = ParseUInt(options.GetRequired("flags"));
+        var size = RpfResourceFileEntry.GetSizeFromFlags(flags);
+        return CommandResult.Ok("Size computed from flags.", new { flags, flagsHex = $"0x{flags:X8}", size });
+    }
+
+    private static CommandResult UtilVersionFromFlags(IReadOnlyList<string> args)
+    {
+        var options = OptionParser.Parse(args);
+        var sysFlags = ParseUInt(options.GetRequired("sys-flags"));
+        var gfxFlags = ParseUInt(options.GetRequired("gfx-flags"));
+        var version = RpfResourceFileEntry.GetVersionFromFlags(sysFlags, gfxFlags);
+        return CommandResult.Ok("Version computed from flags.", new { sysFlags, gfxFlags, version });
+    }
+
+    private static CommandResult UtilPageFlags(IReadOnlyList<string> args)
+    {
+        var options = OptionParser.Parse(args);
+        var raw = ParseUInt(options.GetRequired("flags"));
+        var flags = new RpfResourcePageFlags(raw);
+        var pages = flags.Pages?.Select(p => new { p.Offset, p.Size }).ToArray() ?? Array.Empty<object>();
+        return CommandResult.Ok("Page flags decoded.", new { flags = raw, flagsHex = $"0x{raw:X8}", flags.BaseShift, flags.BaseSize, flags.Count, flags.Size, pageCounts = flags.PageCounts, pageSizes = flags.PageSizes, pages });
+    }
+
+    private static uint ParseUInt(string value)
+    {
+        if (value.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        {
+            return uint.Parse(value[2..], NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+        }
+
+        return uint.Parse(value, CultureInfo.InvariantCulture);
+    }
+
+    private static RpfFile FindArchive(RpfManager manager, string archivePath)
+    {
+        var archive = manager.FindRpfFile(archivePath);
+        if (archive == null)
+        {
+            throw new InvalidOperationException($"Archive not found: {archivePath}");
+        }
+        return archive;
+    }
+
+    private static RpfFileEntry? FindFileEntry(RpfFile archive, string entryPath)
+    {
+        return archive.AllEntries?.OfType<RpfFileEntry>()
+            .FirstOrDefault(e => string.Equals(NormalizePath(e.Path), NormalizePath(entryPath), StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string NormalizePath(string path) => path.Replace('/', '\\').ToLowerInvariant();
 }
 
 internal sealed class FileCommand : ICliCommand
@@ -552,13 +923,30 @@ internal sealed class OptionParser
         _values.TryGetValue(key, out var value);
         return value;
     }
+
+    public bool GetBool(string key, bool defaultValue)
+    {
+        var value = Get(key);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return defaultValue;
+        }
+
+        return value.Trim().ToLowerInvariant() switch
+        {
+            "1" or "true" or "yes" or "y" => true,
+            "0" or "false" or "no" or "n" => false,
+            _ => throw new InvalidOperationException($"Invalid boolean option --{key} value: {value}. Use true|false.")
+        };
+    }
 }
 
 internal sealed class CliOptions
 {
     public bool Success { get; init; }
     public string? ErrorMessage { get; init; }
-    public bool Xml { get; init; }
+    public OutputFormat OutputFormat { get; init; } = OutputFormat.Json;
+    public bool Compact { get; init; }
     public string? GtaFolder { get; init; }
     public string[] CommandArgs { get; init; } = Array.Empty<string>();
 
@@ -566,14 +954,33 @@ internal sealed class CliOptions
     {
         var remaining = new List<string>();
         string? gtaFolder = null;
-        var xml = false;
+        string? formatToken = null;
+        var xmlAlias = false;
+        var compact = false;
 
         for (var i = 0; i < args.Length; i++)
         {
             var token = args[i];
             if (token.Equals("--xml", StringComparison.OrdinalIgnoreCase))
             {
-                xml = true;
+                xmlAlias = true;
+                continue;
+            }
+
+            if (token.Equals("--compact", StringComparison.OrdinalIgnoreCase))
+            {
+                compact = true;
+                continue;
+            }
+
+            if (token.Equals("--format", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 >= args.Length)
+                {
+                    return new CliOptions { ErrorMessage = "Missing value for --format." };
+                }
+
+                formatToken = args[++i];
                 continue;
             }
 
@@ -581,7 +988,7 @@ internal sealed class CliOptions
             {
                 if (i + 1 >= args.Length)
                 {
-                    return new CliOptions { ErrorMessage = "Missing value for --gtafolder.", Xml = xml };
+                    return new CliOptions { ErrorMessage = "Missing value for --gtafolder." };
                 }
 
                 gtaFolder = args[++i];
@@ -591,13 +998,39 @@ internal sealed class CliOptions
             remaining.Add(token);
         }
 
+        var format = ParseFormat(formatToken, xmlAlias, out var formatError);
+        if (!string.IsNullOrEmpty(formatError))
+        {
+            return new CliOptions { ErrorMessage = formatError };
+        }
+
         return new CliOptions
         {
             Success = true,
-            Xml = xml,
+            OutputFormat = format,
+            Compact = compact,
             GtaFolder = gtaFolder,
             CommandArgs = remaining.ToArray()
         };
+    }
+
+    private static OutputFormat ParseFormat(string? explicitFormat, bool xmlAlias, out string? error)
+    {
+        error = null;
+        if (!string.IsNullOrWhiteSpace(explicitFormat))
+        {
+            switch (explicitFormat.Trim().ToLowerInvariant())
+            {
+                case "json": return OutputFormat.Json;
+                case "xml": return OutputFormat.Xml;
+                case "text": return OutputFormat.Text;
+                default:
+                    error = $"Unsupported --format value: {explicitFormat}. Use json|xml|text.";
+                    return OutputFormat.Json;
+            }
+        }
+
+        return xmlAlias ? OutputFormat.Xml : OutputFormat.Json;
     }
 }
 

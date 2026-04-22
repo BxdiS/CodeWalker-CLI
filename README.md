@@ -12,16 +12,78 @@
 
 ## CLI Usage (CodeWalkerCLI)
 - Build/run: `dotnet run --project CodeWalkerCLI/CodeWalkerCLI.csproj -- info`
-- Default output is JSON, use `--xml` for XML output.
+- Output formats: `--format json|xml|text` (default: `json`), legacy alias: `--xml`, compact mode: `--compact`.
 - Global option: `--gtafolder <path>` (required for archive/game-file commands).
 - Supported commands:
   - `info`
   - `version`
   - `rpf list`
-  - `rpf extract --archive <archive.rpf> --entry <entryPath> --output <path>`
+  - `rpf inspect <stats|files|child|defrag-size> --archive <archive.rpf> ...`
+  - `rpf extract [file] --archive <archive.rpf> --entry <entryPath> --output <path>`
+  - `rpf extract scripts --archive <archive.rpf> --output <path>`
+  - `rpf extract test-all --archive <archive.rpf>`
+  - `rpf util compress --input <path> --output <path>`
+  - `rpf util decompress --archive <archive.rpf> --input <path> --output <path>`
+  - `rpf util flags-from-size --size <n> [--version <n>]`
+  - `rpf util flags-from-blocks --block-count <n> --block-size <n> [--version <n>]`
+  - `rpf util size-from-flags --flags <uint|0xhex>`
+  - `rpf util version-from-flags --sys-flags <uint|0xhex> --gfx-flags <uint|0xhex>`
+  - `rpf util page-flags --flags <uint|0xhex>`
   - `file info --path <localFileOrRpfEntryPath>`
   - `file export --path <rpfEntryPath> --output <path>`
   - `search --pattern <text> [--limit <n>]`
+
+### `CodeWalker.Core/GameFiles/RpfFile.cs` coverage map
+
+| RpfFile method | CLI command | Status | Reason / Notes | Example |
+|---|---|---|---|---|
+| `RpfFile(..)` constructors | internal | not-exposed | Internal lifecycle objects; used by manager/scanner | n/a |
+| `CopyToModsFolder` | n/a | planned | Mutating FS behavior, not yet surfaced | n/a |
+| `IsInModsFolder` | `rpf inspect stats` | implemented | Returned in archive metadata | `rpf inspect stats --archive x64a.rpf` |
+| `GetTopParent` | `rpf inspect stats` | implemented | Returned in archive metadata | same as above |
+| `GetPhysicalFilePath` | `rpf inspect stats` | implemented | Returned in archive metadata | same as above |
+| `ScanStructure` | `rpf list`/all archive commands | implemented | Called through `RpfManager.Init` | `rpf list` |
+| `ExtractScripts` | `rpf extract scripts` | implemented | Recursive `.ysc` extraction | `rpf extract scripts --archive x.rpf --output out` |
+| `ExtractFile` | `rpf extract`/`file info`/`file export` | implemented | Primary file extraction API | `rpf extract --archive x.rpf --entry a\\b.ydr --output out` |
+| `ExtractFileBinary` | `rpf extract` (via `ExtractFile`) | implemented | Internal branch selected by entry type | same as above |
+| `ExtractFileResource` | `rpf extract` (via `ExtractFile`) | implemented | Internal branch selected by entry type | same as above |
+| `GetFile<T>(RpfEntry)` | internal | not-exposed | Generic parser helper; used inside `file info` metadata branch | n/a |
+| `GetFile<T>(RpfEntry, byte[])` | `file info` | implemented | Used for typed metadata probing | `file info --path <rpfEntryPath>` |
+| `GetResourceFile<T>` | n/a | not-exposed | Generic typed API unsuitable for raw CLI surface | n/a |
+| `LoadResourceFile<T>` | n/a | not-exposed | Generic mutating load helper | n/a |
+| `CreateResourceFileEntry` | n/a | not-exposed | Low-level helper used by generic load methods | n/a |
+| `TestExtractAllFiles` | `rpf extract test-all` | implemented | Diagnostics extraction report | `rpf extract test-all --archive x.rpf` |
+| `GetFiles(string,bool)` | `rpf inspect files` | implemented | Folder listing API | `rpf inspect files --archive x.rpf --folder x64\\... --recurse true` |
+| `GetFiles(RpfDirectoryEntry,...)` | `rpf inspect files` | implemented | Recursive worker used by public overload | same as above |
+| `DecompressBytes` | `rpf util decompress` | implemented | Requires archive context instance | `rpf util decompress --archive x.rpf --input in --output out` |
+| `CompressBytes` | `rpf util compress` | implemented | Static compressor exposed directly | `rpf util compress --input in --output out` |
+| `FindChildArchive` | `rpf inspect child` | implemented | Maps binary entry to child archive | `rpf inspect child --archive x.rpf --entry x\\y.rpf` |
+| `GetDefragmentedFileSize` | `rpf inspect defrag-size` | implemented | Read-only sizing estimate | `rpf inspect defrag-size --archive x.rpf --recursive true` |
+| `CreateNew(gtafolder, relpath, ..)` | n/a | planned | Mutating creation command planned in next iteration | n/a |
+| `CreateNew(dir, name, ..)` | n/a | planned | Mutating creation command planned in next iteration | n/a |
+| `CreateDirectory` | n/a | planned | Mutating archive edit planned | n/a |
+| `CreateFile` | n/a | planned | Mutating archive edit planned | n/a |
+| `RenameArchive` | n/a | not-exposed | Runtime path relink only; no direct disk rename semantics | n/a |
+| `RenameEntry` | n/a | planned | Mutating archive edit planned | n/a |
+| `DeleteEntry` | n/a | planned | Mutating archive edit planned | n/a |
+| `IsValidEncryption` | n/a | planned | Crypto command group planned | n/a |
+| `EnsureValidEncryption` | n/a | planned | Crypto command group planned | n/a |
+| `SetEncryptionType` | n/a | planned | Crypto command group planned | n/a |
+| `Defragment` | n/a | planned | Mutating maintenance command planned | n/a |
+| `ToString()` overrides | n/a | not-exposed | Diagnostic/object display only | n/a |
+| `RpfEntry.Read/Write` abstract | n/a | not-exposed | Serialization internals | n/a |
+| `RpfEntry.GetShortName/GetShortNameLower` | internal | not-exposed | Naming helpers consumed by core ops | n/a |
+| `RpfDirectoryEntry.Read/Write/ToString` | n/a | not-exposed | Structure internals | n/a |
+| `RpfFileEntry.GetFileSize/SetFileSize` abstract | n/a | not-exposed | Entry internals | n/a |
+| `RpfBinaryFileEntry.Read/Write/GetFileSize/SetFileSize/ToString` | n/a | not-exposed | Entry internals | n/a |
+| `RpfResourceFileEntry.GetSizeFromFlags` | `rpf util size-from-flags` | implemented | Utility exposed | `rpf util size-from-flags --flags 0x60000000` |
+| `RpfResourceFileEntry.GetFlagsFromSize` | `rpf util flags-from-size` | implemented | Utility exposed | `rpf util flags-from-size --size 16384 --version 0` |
+| `RpfResourceFileEntry.GetFlagsFromBlocks` | `rpf util flags-from-blocks` | implemented | Utility exposed | `rpf util flags-from-blocks --block-count 64 --block-size 512` |
+| `RpfResourceFileEntry.GetVersionFromFlags` | `rpf util version-from-flags` | implemented | Utility exposed | `rpf util version-from-flags --sys-flags 0x.. --gfx-flags 0x..` |
+| `RpfResourceFileEntry.Read/Write/GetFileSize/SetFileSize/ToString` | n/a | not-exposed | Entry internals | n/a |
+| `RpfResourcePageFlags(..)` ctors | `rpf util page-flags` | implemented | Decoder object instantiated by CLI | `rpf util page-flags --flags 0x..` |
+| `RpfResourcePageFlags implicit operators` | n/a | not-exposed | Language conversion helpers | n/a |
+| `RpfResourcePageFlags.ToString` / `RpfResourcePage.ToString` | n/a | not-exposed | Debug display only | n/a |
 
 # App Usage:
 On first startup, the app will prompt to browse for the GTA:V game folder. If you have the Steam version installed

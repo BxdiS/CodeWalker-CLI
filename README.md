@@ -22,6 +22,17 @@
   - `rpf extract [file] --archive <archive.rpf> --entry <entryPath> --output <path>`
   - `rpf extract scripts --archive <archive.rpf> --output <path>`
   - `rpf extract test-all --archive <archive.rpf>`
+  - `rpf create root-archive --relpath <path.rpf> [--encryption OPEN|NONE|AES|NG] --force true`
+  - `rpf create archive --archive <archive.rpf> --dir <dirPath> --name <name.rpf> [--encryption OPEN|NONE|AES|NG] --force true`
+  - `rpf create directory --archive <archive.rpf> --dir <dirPath> --name <dirName> --force true`
+  - `rpf create file --archive <archive.rpf> --dir <dirPath> --name <fileName> --input <localFile> [--overwrite true|false] --force true`
+  - `rpf edit rename-entry --path <entryPath> --newname <name> --force true`
+  - `rpf edit delete-entry --path <entryPath> --force true`
+  - `rpf crypto is-valid --archive <archive.rpf> [--recursive true|false]`
+  - `rpf crypto ensure-valid --archive <archive.rpf> [--recursive true|false] --force true`
+  - `rpf crypto set --archive <archive.rpf> --encryption OPEN|NONE|AES|NG --force true`
+  - `rpf maintenance defrag-size --archive <archive.rpf> [--recursive true|false]` (alias: `defragment-size`)
+  - `rpf maintenance defragment --archive <archive.rpf> [--recursive true|false] --force true`
   - `rpf util compress --input <path> --output <path>`
   - `rpf util decompress --archive <archive.rpf> --input <path> --output <path>`
   - `rpf util flags-from-size --size <n> [--version <n>]`
@@ -59,17 +70,17 @@
 | `CompressBytes` | `rpf util compress` | implemented | Static compressor exposed directly | `rpf util compress --input in --output out` |
 | `FindChildArchive` | `rpf inspect child` | implemented | Maps binary entry to child archive | `rpf inspect child --archive x.rpf --entry x\\y.rpf` |
 | `GetDefragmentedFileSize` | `rpf inspect defrag-size` | implemented | Read-only sizing estimate | `rpf inspect defrag-size --archive x.rpf --recursive true` |
-| `CreateNew(gtafolder, relpath, ..)` | n/a | planned | Mutating creation command planned in next iteration | n/a |
-| `CreateNew(dir, name, ..)` | n/a | planned | Mutating creation command planned in next iteration | n/a |
-| `CreateDirectory` | n/a | planned | Mutating archive edit planned | n/a |
-| `CreateFile` | n/a | planned | Mutating archive edit planned | n/a |
+| `CreateNew(gtafolder, relpath, ..)` | `rpf create root-archive` | implemented | Creates new file system archive (mutating, requires `--force true`); `--relpath` accepts path relative to `--gtafolder` or an absolute path | `rpf create root-archive --relpath mods\\update\\x.rpf --force true` |
+| `CreateNew(dir, name, ..)` | `rpf create archive` | implemented | Creates child archive in existing RPF (mutating, requires `--force true`) | `rpf create archive --archive x.rpf --dir x64\\... --name y.rpf --force true` |
+| `CreateDirectory` | `rpf create directory` | implemented | Creates directory entry (mutating, requires `--force true`) | `rpf create directory --archive x.rpf --dir x64\\... --name newdir --force true` |
+| `CreateFile` | `rpf create file` | implemented | Imports local file into RPF (mutating, requires `--force true`) | `rpf create file --archive x.rpf --dir x64\\... --name a.bin --input ./a.bin --force true` |
 | `RenameArchive` | n/a | not-exposed | Runtime path relink only; no direct disk rename semantics | n/a |
-| `RenameEntry` | n/a | planned | Mutating archive edit planned | n/a |
-| `DeleteEntry` | n/a | planned | Mutating archive edit planned | n/a |
-| `IsValidEncryption` | n/a | planned | Crypto command group planned | n/a |
-| `EnsureValidEncryption` | n/a | planned | Crypto command group planned | n/a |
-| `SetEncryptionType` | n/a | planned | Crypto command group planned | n/a |
-| `Defragment` | n/a | planned | Mutating maintenance command planned | n/a |
+| `RenameEntry` | `rpf edit rename-entry` | implemented | Renames archive entry (mutating, requires `--force true`) | `rpf edit rename-entry --path x64\\...\\a.ytd --newname b.ytd --force true` |
+| `DeleteEntry` | `rpf edit delete-entry` | implemented | Deletes entry recursively for directories (mutating, requires `--force true`) | `rpf edit delete-entry --path x64\\...\\old.ydr --force true` |
+| `IsValidEncryption` | `rpf crypto is-valid` | implemented | Read-only encryption validation | `rpf crypto is-valid --archive x.rpf --recursive true` |
+| `EnsureValidEncryption` | `rpf crypto ensure-valid` | implemented | Converts archive chain to valid OPEN encryption (mutating, requires `--force true`) | `rpf crypto ensure-valid --archive x.rpf --recursive true --force true` |
+| `SetEncryptionType` | `rpf crypto set` | implemented | Directly sets encryption type (mutating, requires `--force true`) | `rpf crypto set --archive x.rpf --encryption OPEN --force true` |
+| `Defragment` | `rpf maintenance defragment` | implemented | Defragments archive layout (mutating, requires `--force true`) | `rpf maintenance defragment --archive x.rpf --recursive true --force true` |
 | `ToString()` overrides | n/a | not-exposed | Diagnostic/object display only | n/a |
 | `RpfEntry.Read/Write` abstract | n/a | not-exposed | Serialization internals | n/a |
 | `RpfEntry.GetShortName/GetShortNameLower` | internal | not-exposed | Naming helpers consumed by core ops | n/a |

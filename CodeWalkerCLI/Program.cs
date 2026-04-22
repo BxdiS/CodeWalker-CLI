@@ -205,6 +205,7 @@ internal sealed class CommandContext
     {
         var folder = RequireGtaFolder();
         var coreDllPath = Path.Combine(AppContext.BaseDirectory, "CodeWalker.Core.dll");
+        // Explicit dependency validation: fail fast with a clear error if packaged files are incomplete.
         if (!File.Exists(coreDllPath))
         {
             throw new FileNotFoundException("CodeWalker.Core.dll was not found in the executable directory.", coreDllPath);
@@ -306,10 +307,14 @@ internal sealed class InfoCommand : ICliCommand
             new { name = "info", usage = "CodeWalkerCLI info", description = "Display application info and command list" },
             new { name = "version", usage = "CodeWalkerCLI version", description = "Display CodeWalkerCLI and CodeWalker.Core versions" },
             new { name = "rpf list", usage = "CodeWalkerCLI --gtafolder <path> rpf list", description = "List discovered RPF archives" },
-            new { name = "rpf inspect", usage = "CodeWalkerCLI --gtafolder <path> rpf inspect <stats|files|child|defrag-size> --archive <archive.rpf> ...", description = "Inspect RPF archive structure and sizes" },
+            new { name = "rpf inspect", usage = "CodeWalkerCLI --gtafolder <path> rpf inspect <stats|files|child|defrag-size|defragment-size> --archive <archive.rpf> ...", description = "Inspect RPF archive structure and sizes" },
             new { name = "rpf extract", usage = "CodeWalkerCLI --gtafolder <path> rpf extract [file] --archive <archive.rpf> --entry <entryPath> --output <path>", description = "Extract one file from an RPF archive" },
             new { name = "rpf extract scripts", usage = "CodeWalkerCLI --gtafolder <path> rpf extract scripts --archive <archive.rpf> --output <path>", description = "Extract .ysc scripts recursively" },
             new { name = "rpf extract test-all", usage = "CodeWalkerCLI --gtafolder <path> rpf extract test-all --archive <archive.rpf>", description = "Run extraction diagnostics for all archive files" },
+            new { name = "rpf create", usage = "CodeWalkerCLI --gtafolder <path> rpf create <root-archive|archive|directory|file> ... --force true", description = "Create archives/directories/files in RPFs" },
+            new { name = "rpf edit", usage = "CodeWalkerCLI --gtafolder <path> rpf edit <rename-entry|delete-entry> ... --force true", description = "Mutate archive entries" },
+            new { name = "rpf crypto", usage = "CodeWalkerCLI --gtafolder <path> rpf crypto <is-valid|ensure-valid|set> ...", description = "Inspect or update archive encryption" },
+            new { name = "rpf maintenance", usage = "CodeWalkerCLI --gtafolder <path> rpf maintenance <defrag-size|defragment-size (alias)|defragment> ...", description = "Defragmentation and size planning" },
             new { name = "rpf util", usage = "CodeWalkerCLI rpf util <compress|decompress|flags-from-size|flags-from-blocks|size-from-flags|version-from-flags|page-flags> ...", description = "Invoke RpfFile utility operations" },
             new { name = "file info", usage = "CodeWalkerCLI file info --path <localFile> OR CodeWalkerCLI --gtafolder <path> file info --path <rpfEntryPath>", description = "Get metadata for local or game files" },
             new { name = "file export", usage = "CodeWalkerCLI --gtafolder <path> file export --path <rpfEntryPath> --output <file>", description = "Export a game file (XML when supported, raw fallback)" },
@@ -356,7 +361,7 @@ internal sealed class RpfCommand : ICliCommand
 
     public string Name => "rpf";
     public string Description => "RPF archive commands.";
-    public string Usage => "CodeWalkerCLI --gtafolder <path> rpf <list|inspect|extract|util> ...";
+    public string Usage => "CodeWalkerCLI --gtafolder <path> rpf <list|inspect|extract|create|edit|crypto|maintenance|util> ...";
 
     public CommandResult Execute(CommandContext context, IReadOnlyList<string> args)
     {
@@ -370,6 +375,10 @@ internal sealed class RpfCommand : ICliCommand
             "list" => List(context),
             "inspect" => Inspect(context, args.Skip(1).ToArray()),
             "extract" => Extract(context, args.Skip(1).ToArray()),
+            "create" => Create(context, args.Skip(1).ToArray()),
+            "edit" => Edit(context, args.Skip(1).ToArray()),
+            "crypto" => Crypto(context, args.Skip(1).ToArray()),
+            "maintenance" => Maintenance(context, args.Skip(1).ToArray()),
             "util" => Util(context, args.Skip(1).ToArray()),
             _ => CommandResult.Error($"Unknown rpf subcommand: {args[0]}", new { usage = Usage })
         };
@@ -394,7 +403,7 @@ internal sealed class RpfCommand : ICliCommand
     {
         if (args.Count == 0)
         {
-            return CommandResult.Error("Missing inspect subcommand.", new { usage = "CodeWalkerCLI --gtafolder <path> rpf inspect <stats|files|child|defrag-size|defragment-size> ..." });
+            return CommandResult.Error("Missing inspect subcommand.", new { usage = "CodeWalkerCLI --gtafolder <path> rpf inspect <stats|files|child|defrag-size|defragment-size (alias)> ..." });
         }
 
         var options = OptionParser.Parse(args.Skip(1).ToArray());
@@ -661,6 +670,278 @@ internal sealed class RpfCommand : ICliCommand
         return CommandResult.Ok("Page flags decoded.", new { flags = raw, flagsHex = $"0x{raw:X8}", flags.BaseShift, flags.BaseSize, flags.Count, flags.Size, pageCounts = flags.PageCounts, pageSizes = flags.PageSizes, pages });
     }
 
+    private static CommandResult Create(CommandContext context, IReadOnlyList<string> args)
+    {
+        if (args.Count == 0)
+        {
+            return CommandResult.Error("Missing create subcommand.", new { usage = "CodeWalkerCLI --gtafolder <path> rpf create <root-archive|archive|directory|file> ... --force true" });
+        }
+
+        return args[0].ToLowerInvariant() switch
+        {
+            "root-archive" => CreateRootArchive(context, args.Skip(1).ToArray()),
+            "archive" => CreateArchive(context, args.Skip(1).ToArray()),
+            "directory" => CreateDirectory(context, args.Skip(1).ToArray()),
+            "file" => CreateFile(context, args.Skip(1).ToArray()),
+            _ => CommandResult.Error($"Unknown create subcommand: {args[0]}")
+        };
+    }
+
+    private static CommandResult CreateRootArchive(CommandContext context, IReadOnlyList<string> args)
+    {
+        var options = OptionParser.Parse(args);
+        EnsureForce(options, "create root archive");
+        var gtaFolder = context.RequireGtaFolder();
+        var relpath = options.GetRequired("relpath");
+        var encryption = ParseEncryption(options.Get("encryption"));
+        var file = RpfFile.CreateNew(gtaFolder, relpath, encryption);
+
+        return CommandResult.Ok("Root archive created.", new
+        {
+            file.Name,
+            file.Path,
+            file.FilePath,
+            file.FileSize,
+            file.Encryption
+        });
+    }
+
+    private static CommandResult CreateArchive(CommandContext context, IReadOnlyList<string> args)
+    {
+        var options = OptionParser.Parse(args);
+        EnsureForce(options, "create archive");
+        var manager = context.CreateRpfManager();
+        var archive = FindArchive(manager, options.GetRequired("archive"));
+        var dir = FindDirectoryEntry(archive, options.GetRequired("dir"));
+        var name = options.GetRequired("name");
+        var encryption = ParseEncryption(options.Get("encryption"));
+        var created = RpfFile.CreateNew(dir, name, encryption);
+
+        return CommandResult.Ok("Child archive created.", new
+        {
+            parentArchive = archive.Path,
+            directory = dir.Path,
+            created.Name,
+            created.Path,
+            created.FileSize,
+            created.Encryption
+        });
+    }
+
+    private static CommandResult CreateDirectory(CommandContext context, IReadOnlyList<string> args)
+    {
+        var options = OptionParser.Parse(args);
+        EnsureForce(options, "create directory");
+        var manager = context.CreateRpfManager();
+        var archive = FindArchive(manager, options.GetRequired("archive"));
+        var dir = FindDirectoryEntry(archive, options.GetRequired("dir"));
+        var name = options.GetRequired("name");
+        var created = RpfFile.CreateDirectory(dir, name);
+
+        return CommandResult.Ok("Directory created.", new
+        {
+            archive = archive.Path,
+            parentDirectory = dir.Path,
+            created.Name,
+            created.Path
+        });
+    }
+
+    private static CommandResult CreateFile(CommandContext context, IReadOnlyList<string> args)
+    {
+        var options = OptionParser.Parse(args);
+        EnsureForce(options, "create file");
+        var manager = context.CreateRpfManager();
+        var archive = FindArchive(manager, options.GetRequired("archive"));
+        var dir = FindDirectoryEntry(archive, options.GetRequired("dir"));
+        var name = options.GetRequired("name");
+        var input = options.GetRequired("input");
+        var overwrite = options.GetBool("overwrite", true);
+
+        if (!File.Exists(input))
+        {
+            return CommandResult.Error($"Input file not found: {input}");
+        }
+
+        var bytes = File.ReadAllBytes(input);
+        var created = RpfFile.CreateFile(dir, name, bytes, overwrite);
+        return CommandResult.Ok("File created.", new
+        {
+            archive = archive.Path,
+            directory = dir.Path,
+            created.Name,
+            created.Path,
+            size = created.GetFileSize()
+        });
+    }
+
+    private static CommandResult Edit(CommandContext context, IReadOnlyList<string> args)
+    {
+        if (args.Count == 0)
+        {
+            return CommandResult.Error("Missing edit subcommand.", new { usage = "CodeWalkerCLI --gtafolder <path> rpf edit <rename-entry|delete-entry> ... --force true" });
+        }
+
+        return args[0].ToLowerInvariant() switch
+        {
+            "rename-entry" => RenameEntry(context, args.Skip(1).ToArray()),
+            "delete-entry" => DeleteEntry(context, args.Skip(1).ToArray()),
+            _ => CommandResult.Error($"Unknown edit subcommand: {args[0]}")
+        };
+    }
+
+    private static CommandResult RenameEntry(CommandContext context, IReadOnlyList<string> args)
+    {
+        var options = OptionParser.Parse(args);
+        EnsureForce(options, "rename entry");
+        var manager = context.CreateRpfManager();
+        var path = options.GetRequired("path");
+        var newName = options.GetRequired("newname");
+        var entry = manager.GetEntry(path);
+        if (entry == null)
+        {
+            return CommandResult.Error($"Entry not found: {path}");
+        }
+
+        var oldPath = entry.Path;
+        RpfFile.RenameEntry(entry, newName);
+
+        return CommandResult.Ok("Entry renamed.", new
+        {
+            previousPath = oldPath,
+            entry.Name,
+            entry.Path
+        });
+    }
+
+    private static CommandResult DeleteEntry(CommandContext context, IReadOnlyList<string> args)
+    {
+        var options = OptionParser.Parse(args);
+        EnsureForce(options, "delete entry");
+        var manager = context.CreateRpfManager();
+        var path = options.GetRequired("path");
+        var entry = manager.GetEntry(path);
+        if (entry == null)
+        {
+            return CommandResult.Error($"Entry not found: {path}");
+        }
+
+        var deletedPath = entry.Path;
+        RpfFile.DeleteEntry(entry);
+
+        return CommandResult.Ok("Entry deleted.", new { path = deletedPath });
+    }
+
+    private static CommandResult Crypto(CommandContext context, IReadOnlyList<string> args)
+    {
+        if (args.Count == 0)
+        {
+            return CommandResult.Error("Missing crypto subcommand.", new { usage = "CodeWalkerCLI --gtafolder <path> rpf crypto <is-valid|ensure-valid|set> ..." });
+        }
+
+        return args[0].ToLowerInvariant() switch
+        {
+            "is-valid" => CryptoIsValid(context, args.Skip(1).ToArray()),
+            "ensure-valid" => CryptoEnsureValid(context, args.Skip(1).ToArray()),
+            "set" => CryptoSet(context, args.Skip(1).ToArray()),
+            _ => CommandResult.Error($"Unknown crypto subcommand: {args[0]}")
+        };
+    }
+
+    private static CommandResult CryptoIsValid(CommandContext context, IReadOnlyList<string> args)
+    {
+        var options = OptionParser.Parse(args);
+        var manager = context.CreateRpfManager();
+        var archive = FindArchive(manager, options.GetRequired("archive"));
+        var recursive = options.GetBool("recursive", false);
+        var valid = RpfFile.IsValidEncryption(archive, recursive);
+
+        return CommandResult.Ok("Encryption validation complete.", new
+        {
+            archive = archive.Path,
+            recursive,
+            valid,
+            encryption = archive.Encryption.ToString()
+        });
+    }
+
+    private static CommandResult CryptoEnsureValid(CommandContext context, IReadOnlyList<string> args)
+    {
+        var options = OptionParser.Parse(args);
+        EnsureForce(options, "ensure valid encryption");
+        var manager = context.CreateRpfManager();
+        var archive = FindArchive(manager, options.GetRequired("archive"));
+        var recursive = options.GetBool("recursive", false);
+        var changed = new List<string>();
+        var ok = RpfFile.EnsureValidEncryption(archive, file =>
+        {
+            changed.Add(file.Path);
+            return true;
+        }, recursive);
+
+        return CommandResult.Ok("Ensure valid encryption complete.", new
+        {
+            archive = archive.Path,
+            recursive,
+            ok,
+            changed
+        });
+    }
+
+    private static CommandResult CryptoSet(CommandContext context, IReadOnlyList<string> args)
+    {
+        var options = OptionParser.Parse(args);
+        EnsureForce(options, "set encryption");
+        var manager = context.CreateRpfManager();
+        var archive = FindArchive(manager, options.GetRequired("archive"));
+        var encryption = ParseEncryption(options.GetRequired("encryption"));
+        RpfFile.SetEncryptionType(archive, encryption);
+
+        return CommandResult.Ok("Encryption updated.", new { archive = archive.Path, encryption = encryption.ToString() });
+    }
+
+    private static CommandResult Maintenance(CommandContext context, IReadOnlyList<string> args)
+    {
+        if (args.Count == 0)
+        {
+            return CommandResult.Error("Missing maintenance subcommand.", new { usage = "CodeWalkerCLI --gtafolder <path> rpf maintenance <defrag-size|defragment-size (alias)|defragment> ..." });
+        }
+
+        return args[0].ToLowerInvariant() switch
+        {
+            "defrag-size" or "defragment-size" => MaintenanceDefragSize(context, args.Skip(1).ToArray()),
+            "defragment" => MaintenanceDefragment(context, args.Skip(1).ToArray()),
+            _ => CommandResult.Error($"Unknown maintenance subcommand: {args[0]}")
+        };
+    }
+
+    private static CommandResult MaintenanceDefragSize(CommandContext context, IReadOnlyList<string> args)
+    {
+        var options = OptionParser.Parse(args);
+        var manager = context.CreateRpfManager();
+        var archive = FindArchive(manager, options.GetRequired("archive"));
+        return InspectDefragSize(archive, options);
+    }
+
+    private static CommandResult MaintenanceDefragment(CommandContext context, IReadOnlyList<string> args)
+    {
+        var options = OptionParser.Parse(args);
+        EnsureForce(options, "defragment archive");
+        var manager = context.CreateRpfManager();
+        var archive = FindArchive(manager, options.GetRequired("archive"));
+        var recursive = options.GetBool("recursive", true);
+        var log = new List<string>();
+        RpfFile.Defragment(archive, (status, progress) => log.Add($"{status} {progress:P1}"), recursive);
+
+        return CommandResult.Ok("Archive defragmentation complete.", new
+        {
+            archive = archive.Path,
+            recursive,
+            archive.FileSize,
+            log = log.TakeLast(MaxLogEntries).ToArray()
+        });
+    }
+
     private static uint ParseUInt(string value)
     {
         if (value.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
@@ -669,6 +950,31 @@ internal sealed class RpfCommand : ICliCommand
         }
 
         return uint.Parse(value, CultureInfo.InvariantCulture);
+    }
+
+    private static RpfEncryption ParseEncryption(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return RpfEncryption.OPEN;
+        }
+
+        return value.Trim().ToUpperInvariant() switch
+        {
+            "OPEN" => RpfEncryption.OPEN,
+            "NONE" => RpfEncryption.NONE,
+            "AES" => RpfEncryption.AES,
+            "NG" => RpfEncryption.NG,
+            _ => throw new InvalidOperationException($"Unsupported --encryption value: {value}. Use OPEN|NONE|AES|NG.")
+        };
+    }
+
+    private static void EnsureForce(OptionParser options, string action)
+    {
+        if (!options.GetBool("force", false))
+        {
+            throw new InvalidOperationException($"Refusing to {action} without --force true.");
+        }
     }
 
     private static int ParseIntOption(string value, string optionName)
@@ -707,7 +1013,21 @@ internal sealed class RpfCommand : ICliCommand
             .FirstOrDefault(e => string.Equals(NormalizePath(e.Path), NormalizePath(entryPath), StringComparison.OrdinalIgnoreCase));
     }
 
-    private static string NormalizePath(string path) => path.Replace('/', '\\').ToLowerInvariant();
+    private static RpfDirectoryEntry FindDirectoryEntry(RpfFile archive, string directoryPath)
+    {
+        var dir = archive.AllEntries?.OfType<RpfDirectoryEntry>()
+            .FirstOrDefault(d => string.Equals(NormalizePath(d.Path), NormalizePath(directoryPath), StringComparison.OrdinalIgnoreCase));
+
+        if (dir == null)
+        {
+            throw new InvalidOperationException($"Directory not found in archive: {directoryPath}");
+        }
+
+        return dir;
+    }
+
+    private static string NormalizePath(string path) =>
+        path.Replace('\\', '/').Replace('/', '\\').Trim().ToLowerInvariant();
 }
 
 internal sealed class FileCommand : ICliCommand
@@ -924,7 +1244,7 @@ internal sealed class OptionParser
             var key = token[2..];
             if (i + 1 >= args.Count || args[i + 1].StartsWith("--", StringComparison.Ordinal))
             {
-                throw new InvalidOperationException($"Missing value for option --{key}.");
+                throw new InvalidOperationException($"Missing value for option --{key}. Expected: --{key} <value>.");
             }
 
             values[key] = args[++i];

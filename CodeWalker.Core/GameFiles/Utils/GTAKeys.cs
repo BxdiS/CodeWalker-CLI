@@ -311,6 +311,34 @@ namespace CodeWalker.GameFiles
             PC_NG_DECRYPT_TABLES = CryptoIO.ReadNgTables(b2);
             PC_LUT = b3;
             PC_AWC_KEY = b4;
+
+            PC_NG_ENCRYPT_TABLES = new uint[17][][];
+            for (int i = 0; i < 17; i++)
+            {
+                PC_NG_ENCRYPT_TABLES[i] = new uint[16][];
+                for (int j = 0; j < 16; j++)
+                {
+                    PC_NG_ENCRYPT_TABLES[i][j] = new uint[256];
+                }
+            }
+
+            PC_NG_ENCRYPT_LUTs = new GTA5NGLUT[17][];
+            for (int i = 0; i < 17; i++)
+            {
+                PC_NG_ENCRYPT_LUTs[i] = new GTA5NGLUT[16];
+                for (int j = 0; j < 16; j++)
+                {
+                    PC_NG_ENCRYPT_LUTs[i][j] = new GTA5NGLUT();
+                }
+            }
+
+            PC_NG_ENCRYPT_TABLES[0] = RandomGauss.Solve(PC_NG_DECRYPT_TABLES[0]);
+            PC_NG_ENCRYPT_TABLES[1] = RandomGauss.Solve(PC_NG_DECRYPT_TABLES[1]);
+            for (int k = 2; k <= 15; k++)
+            {
+                PC_NG_ENCRYPT_LUTs[k] = LookUpTableGenerator.BuildLUTs2(PC_NG_DECRYPT_TABLES[k]);
+            }
+            PC_NG_ENCRYPT_TABLES[16] = RandomGauss.Solve(PC_NG_DECRYPT_TABLES[16]);
         }
 
 

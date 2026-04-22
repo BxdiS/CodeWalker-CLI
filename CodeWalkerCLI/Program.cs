@@ -10,6 +10,8 @@ namespace CodeWalkerCLI;
 
 internal static class Program
 {
+    private const int TextIndentSize = 2;
+
     private static int Main(string[] args)
     {
         var parse = CliOptions.Parse(args);
@@ -115,7 +117,7 @@ internal static class Program
 
     private static void WriteText(JsonElement element, StringBuilder sb, int depth)
     {
-        var indent = new string(' ', depth * 2);
+        var indent = new string(' ', depth * TextIndentSize);
         switch (element.ValueKind)
         {
             case JsonValueKind.Object:
@@ -350,6 +352,8 @@ internal sealed class VersionCommand : ICliCommand
 
 internal sealed class RpfCommand : ICliCommand
 {
+    private const int MaxLogEntries = 20;
+
     public string Name => "rpf";
     public string Description => "RPF archive commands.";
     public string Usage => "CodeWalkerCLI --gtafolder <path> rpf <list|inspect|extract|util> ...";
@@ -390,7 +394,7 @@ internal sealed class RpfCommand : ICliCommand
     {
         if (args.Count == 0)
         {
-            return CommandResult.Error("Missing inspect subcommand.", new { usage = "CodeWalkerCLI --gtafolder <path> rpf inspect <stats|files|child|defrag-size> ..." });
+            return CommandResult.Error("Missing inspect subcommand.", new { usage = "CodeWalkerCLI --gtafolder <path> rpf inspect <stats|files|child|defrag-size|defragment-size> ..." });
         }
 
         var options = OptionParser.Parse(args.Skip(1).ToArray());
@@ -420,7 +424,7 @@ internal sealed class RpfCommand : ICliCommand
             }),
             "files" => InspectFiles(archive, options),
             "child" => InspectChild(archive, options),
-            "defrag-size" => InspectDefragSize(archive, options),
+            "defrag-size" or "defragment-size" => InspectDefragSize(archive, options),
             _ => CommandResult.Error($"Unknown inspect subcommand: {args[0]}")
         };
     }
@@ -534,7 +538,7 @@ internal sealed class RpfCommand : ICliCommand
             archive = archive.Path,
             output = outputPath,
             lastError = archive.LastError,
-            log = log.TakeLast(20).ToArray()
+            log = log.TakeLast(MaxLogEntries).ToArray()
         });
     }
 
@@ -615,8 +619,8 @@ internal sealed class RpfCommand : ICliCommand
     private static CommandResult UtilFlagsFromSize(IReadOnlyList<string> args)
     {
         var options = OptionParser.Parse(args);
-        var size = int.Parse(options.GetRequired("size"), CultureInfo.InvariantCulture);
-        var version = uint.Parse(options.Get("version") ?? "0", CultureInfo.InvariantCulture);
+        var size = ParseIntOption(options.GetRequired("size"), "size");
+        var version = ParseUIntOption(options.Get("version") ?? "0", "version");
         var flags = RpfResourceFileEntry.GetFlagsFromSize(size, version);
         return CommandResult.Ok("Flags computed from size.", new { size, version, flags, flagsHex = $"0x{flags:X8}" });
     }
@@ -624,9 +628,9 @@ internal sealed class RpfCommand : ICliCommand
     private static CommandResult UtilFlagsFromBlocks(IReadOnlyList<string> args)
     {
         var options = OptionParser.Parse(args);
-        var blockCount = uint.Parse(options.GetRequired("block-count"), CultureInfo.InvariantCulture);
-        var blockSize = uint.Parse(options.GetRequired("block-size"), CultureInfo.InvariantCulture);
-        var version = uint.Parse(options.Get("version") ?? "0", CultureInfo.InvariantCulture);
+        var blockCount = ParseUIntOption(options.GetRequired("block-count"), "block-count");
+        var blockSize = ParseUIntOption(options.GetRequired("block-size"), "block-size");
+        var version = ParseUIntOption(options.Get("version") ?? "0", "version");
         var flags = RpfResourceFileEntry.GetFlagsFromBlocks(blockCount, blockSize, version);
         return CommandResult.Ok("Flags computed from blocks.", new { blockCount, blockSize, version, flags, flagsHex = $"0x{flags:X8}" });
     }
@@ -665,6 +669,26 @@ internal sealed class RpfCommand : ICliCommand
         }
 
         return uint.Parse(value, CultureInfo.InvariantCulture);
+    }
+
+    private static int ParseIntOption(string value, string optionName)
+    {
+        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var result))
+        {
+            throw new InvalidOperationException($"Invalid --{optionName} value: must be an integer.");
+        }
+
+        return result;
+    }
+
+    private static uint ParseUIntOption(string value, string optionName)
+    {
+        if (!uint.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var result))
+        {
+            throw new InvalidOperationException($"Invalid --{optionName} value: must be a non-negative integer.");
+        }
+
+        return result;
     }
 
     private static RpfFile FindArchive(RpfManager manager, string archivePath)
@@ -833,6 +857,8 @@ internal sealed class FileCommand : ICliCommand
 
 internal sealed class SearchCommand : ICliCommand
 {
+    private const int DefaultSearchLimit = 100;
+
     public string Name => "search";
     public string Description => "Search for files in game archives.";
     public string Usage => "CodeWalkerCLI --gtafolder <path> search --pattern <text> [--limit <n>]";
@@ -868,7 +894,7 @@ internal sealed class SearchCommand : ICliCommand
     {
         if (string.IsNullOrWhiteSpace(limitText))
         {
-            return 100;
+            return DefaultSearchLimit;
         }
 
         return int.TryParse(limitText, out var limit) ? limit : -1;

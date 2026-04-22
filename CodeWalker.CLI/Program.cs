@@ -21,7 +21,7 @@ internal static class Program
             return 1;
         }
 
-        var commandContext = new CommandContext(parse.GtaFolder);
+        var commandContext = new CommandContext(parse.GtaFolder, parse.AesKey);
         var root = CommandRegistry.Create();
 
         var result = root.Execute(commandContext, parse.CommandArgs);
@@ -179,10 +179,18 @@ internal enum OutputFormat
 
 internal sealed class CommandContext
 {
-    public CommandContext(string? gtaFolder)
+    private static readonly string KeyCacheFile = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "CodeWalker.CLI",
+        "aes_key.b64");
+
+    public CommandContext(string? gtaFolder, string? aesKey = null)
     {
         GtaFolder = gtaFolder;
+        _aesKey = aesKey;
     }
+
+    private readonly string? _aesKey;
 
     public string? GtaFolder { get; }
 
@@ -211,7 +219,16 @@ internal sealed class CommandContext
             throw new FileNotFoundException("CodeWalker.Core.dll was not found in the executable directory.", coreDllPath);
         }
 
-        GTA5Keys.LoadFromPath(folder);
+        // Key resolution priority: --key CLI arg → local cache file → scan GTA5.exe (slow)
+        var effectiveKey = ResolveAesKey();
+        GTA5Keys.LoadFromPath(folder, false, effectiveKey);
+
+        // If the key was freshly extracted from GTA5.exe (no cached key was available),
+        // persist it for future runs so we can skip the exe scan next time.
+        if (effectiveKey == null && GTA5Keys.PC_AES_KEY != null)
+        {
+            SaveKeyToCache(Convert.ToBase64String(GTA5Keys.PC_AES_KEY));
+        }
 
         // GTA5Keys.LoadFromPath uses embedded magic data which loads the NG decrypt tables
         // but does not derive the NG encrypt tables. They are required when writing the
@@ -246,6 +263,7 @@ internal sealed class CommandContext
             }
             GTA5Keys.PC_NG_ENCRYPT_TABLES[16] = RandomGauss.Solve(GTA5Keys.PC_NG_DECRYPT_TABLES[16]);
         }
+
         var manager = new RpfManager();
         manager.Init(folder, false, _ => { }, _ => { }, buildIndex: false);
 
@@ -255,6 +273,47 @@ internal sealed class CommandContext
         }
 
         return manager;
+    }
+
+    private string? ResolveAesKey()
+    {
+        // Explicit --key argument takes precedence.
+        if (!string.IsNullOrWhiteSpace(_aesKey))
+        {
+            return _aesKey;
+        }
+
+        // Fall back to the on-disk cache written by a previous run.
+        if (File.Exists(KeyCacheFile))
+        {
+            try
+            {
+                var cached = File.ReadAllText(KeyCacheFile).Trim();
+                if (!string.IsNullOrWhiteSpace(cached))
+                {
+                    return cached;
+                }
+            }
+            catch
+            {
+                // Ignore read errors — fall through to exe scan.
+            }
+        }
+
+        return null;
+    }
+
+    private static void SaveKeyToCache(string base64Key)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(KeyCacheFile)!);
+            File.WriteAllText(KeyCacheFile, base64Key);
+        }
+        catch
+        {
+            // Non-fatal: if we can't write the cache, the next run will just re-scan the exe.
+        }
     }
 }
 
@@ -1333,12 +1392,14 @@ internal sealed class CliOptions
     public OutputFormat OutputFormat { get; init; } = OutputFormat.Json;
     public bool Compact { get; init; }
     public string? GtaFolder { get; init; }
+    public string? AesKey { get; init; }
     public string[] CommandArgs { get; init; } = Array.Empty<string>();
 
     public static CliOptions Parse(string[] args)
     {
         var remaining = new List<string>();
         string? gtaFolder = null;
+        string? aesKey = null;
         string? formatToken = null;
         var xmlAlias = false;
         var compact = false;
@@ -1380,6 +1441,17 @@ internal sealed class CliOptions
                 continue;
             }
 
+            if (token.Equals("--key", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 >= args.Length)
+                {
+                    return new CliOptions { ErrorMessage = "Missing value for --key." };
+                }
+
+                aesKey = args[++i];
+                continue;
+            }
+
             remaining.Add(token);
         }
 
@@ -1395,6 +1467,7 @@ internal sealed class CliOptions
             OutputFormat = format,
             Compact = compact,
             GtaFolder = gtaFolder,
+            AesKey = aesKey,
             CommandArgs = remaining.ToArray()
         };
     }

@@ -712,7 +712,7 @@ internal sealed class RpfCommand : ICliCommand
         EnsureForce(options, "create archive");
         var manager = context.CreateRpfManager();
         var archive = FindArchive(manager, options.GetRequired("archive"));
-        var dir = FindDirectoryEntry(archive, options.GetRequired("dir"));
+        var dir = FindDirectoryEntry(archive, options.Get("dir"));
         var name = options.GetRequired("name");
         var encryption = ParseEncryption(options.Get("encryption"));
         var created = RpfFile.CreateNew(dir, name, encryption);
@@ -734,7 +734,7 @@ internal sealed class RpfCommand : ICliCommand
         EnsureForce(options, "create directory");
         var manager = context.CreateRpfManager();
         var archive = FindArchive(manager, options.GetRequired("archive"));
-        var dir = FindDirectoryEntry(archive, options.GetRequired("dir"));
+        var dir = FindDirectoryEntry(archive, options.Get("dir"));
         var name = options.GetRequired("name");
         var created = RpfFile.CreateDirectory(dir, name);
 
@@ -753,7 +753,7 @@ internal sealed class RpfCommand : ICliCommand
         EnsureForce(options, "create file");
         var manager = context.CreateRpfManager();
         var archive = FindArchive(manager, options.GetRequired("archive"));
-        var dir = FindDirectoryEntry(archive, options.GetRequired("dir"));
+        var dir = FindDirectoryEntry(archive, options.Get("dir"));
         var name = options.GetRequired("name");
         var input = options.GetRequired("input");
         var overwrite = options.GetBool("overwrite", true);
@@ -1013,8 +1013,13 @@ internal sealed class RpfCommand : ICliCommand
             .FirstOrDefault(e => string.Equals(NormalizePath(e.Path), NormalizePath(entryPath), StringComparison.OrdinalIgnoreCase));
     }
 
-    private static RpfDirectoryEntry FindDirectoryEntry(RpfFile archive, string directoryPath)
+    private static RpfDirectoryEntry FindDirectoryEntry(RpfFile archive, string? directoryPath)
     {
+        if (string.IsNullOrWhiteSpace(directoryPath))
+        {
+            return archive.Root;
+        }
+
         var dir = archive.AllEntries?.OfType<RpfDirectoryEntry>()
             .FirstOrDefault(d => string.Equals(NormalizePath(d.Path), NormalizePath(directoryPath), StringComparison.OrdinalIgnoreCase));
 

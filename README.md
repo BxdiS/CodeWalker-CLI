@@ -23,9 +23,9 @@
   - `rpf extract scripts --archive <archive.rpf> --output <path>`
   - `rpf extract test-all --archive <archive.rpf>`
   - `rpf create root-archive --relpath <path.rpf> [--encryption OPEN|NONE|AES|NG] --force true`
-  - `rpf create archive --archive <archive.rpf> --dir <dirPath> --name <name.rpf> [--encryption OPEN|NONE|AES|NG] --force true`
-  - `rpf create directory --archive <archive.rpf> --dir <dirPath> --name <dirName> --force true`
-  - `rpf create file --archive <archive.rpf> --dir <dirPath> --name <fileName> --input <localFile> [--overwrite true|false] --force true`
+  - `rpf create archive --archive <archive.rpf> [--dir <dirPath>] --name <name.rpf> [--encryption OPEN|NONE|AES|NG] --force true`
+  - `rpf create directory --archive <archive.rpf> [--dir <dirPath>] --name <dirName> --force true`
+  - `rpf create file --archive <archive.rpf> [--dir <dirPath>] --name <fileName> --input <localFile> [--overwrite true|false] --force true`
   - `rpf edit rename-entry --path <entryPath> --newname <name> --force true`
   - `rpf edit delete-entry --path <entryPath> --force true`
   - `rpf crypto is-valid --archive <archive.rpf> [--recursive true|false]`

@@ -10,8 +10,8 @@
 - .NET framework 4.5 or newer from [Microsoft](https://www.microsoft.com/net/download/thank-you/net471);
 - DirectX 11 and Shader Model 4.0 capable graphics.
 
-## CLI Usage (CodeWalkerCLI)
-- Build/run: `dotnet run --project CodeWalkerCLI/CodeWalkerCLI.csproj -- info`
+## CLI Usage (CodeWalker.CLI)
+- Build/run: `dotnet run --project CodeWalker.CLI/CodeWalker.CLI.csproj -- info`
 - Output formats: `--format json|xml|text` (default: `json`), legacy alias: `--xml`, compact mode: `--compact`.
 - Global option: `--gtafolder <path>` (required for archive/game-file commands).
 - Supported commands:

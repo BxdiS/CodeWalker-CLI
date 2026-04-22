@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 using System.Xml.Linq;
 using CodeWalker.GameFiles;
 
-namespace CodeWalkerCLI;
+namespace CodeWalker.CLI;
 
 internal static class Program
 {
@@ -268,8 +268,8 @@ internal sealed class RootCommand : ICliCommand
     }
 
     public string Name => "root";
-    public string Description => "CodeWalkerCLI root command";
-    public string Usage => "CodeWalkerCLI <command> [options]";
+    public string Description => "CodeWalker.CLI root command";
+    public string Usage => "CodeWalker.CLI <command> [options]";
 
     public CommandResult Execute(CommandContext context, IReadOnlyList<string> args)
     {
@@ -298,32 +298,32 @@ internal sealed class InfoCommand : ICliCommand
 {
     public string Name => "info";
     public string Description => "Display application info and available commands.";
-    public string Usage => "CodeWalkerCLI info";
+    public string Usage => "CodeWalker.CLI info";
 
     public CommandResult Execute(CommandContext context, IReadOnlyList<string> args)
     {
         var commands = new[]
         {
-            new { name = "info", usage = "CodeWalkerCLI info", description = "Display application info and command list" },
-            new { name = "version", usage = "CodeWalkerCLI version", description = "Display CodeWalkerCLI and CodeWalker.Core versions" },
-            new { name = "rpf list", usage = "CodeWalkerCLI --gtafolder <path> rpf list", description = "List discovered RPF archives" },
-            new { name = "rpf inspect", usage = "CodeWalkerCLI --gtafolder <path> rpf inspect <stats|files|child|defrag-size|defragment-size (alias)> --archive <archive.rpf> ...", description = "Inspect RPF archive structure and sizes" },
-            new { name = "rpf extract", usage = "CodeWalkerCLI --gtafolder <path> rpf extract [file] --archive <archive.rpf> --entry <entryPath> --output <path>", description = "Extract one file from an RPF archive" },
-            new { name = "rpf extract scripts", usage = "CodeWalkerCLI --gtafolder <path> rpf extract scripts --archive <archive.rpf> --output <path>", description = "Extract .ysc scripts recursively" },
-            new { name = "rpf extract test-all", usage = "CodeWalkerCLI --gtafolder <path> rpf extract test-all --archive <archive.rpf>", description = "Run extraction diagnostics for all archive files" },
-            new { name = "rpf create", usage = "CodeWalkerCLI --gtafolder <path> rpf create <root-archive|archive|directory|file> ... --force true", description = "Create archives/directories/files in RPFs" },
-            new { name = "rpf edit", usage = "CodeWalkerCLI --gtafolder <path> rpf edit <rename-entry|delete-entry> ... --force true", description = "Mutate archive entries" },
-            new { name = "rpf crypto", usage = "CodeWalkerCLI --gtafolder <path> rpf crypto <is-valid|ensure-valid|set> ...", description = "Inspect or update archive encryption" },
-            new { name = "rpf maintenance", usage = "CodeWalkerCLI --gtafolder <path> rpf maintenance <defrag-size|defragment-size (alias)|defragment> ...", description = "Defragmentation and size planning" },
-            new { name = "rpf util", usage = "CodeWalkerCLI rpf util <compress|decompress|flags-from-size|flags-from-blocks|size-from-flags|version-from-flags|page-flags> ...", description = "Invoke RpfFile utility operations" },
-            new { name = "file info", usage = "CodeWalkerCLI file info --path <localFile> OR CodeWalkerCLI --gtafolder <path> file info --path <rpfEntryPath>", description = "Get metadata for local or game files" },
-            new { name = "file export", usage = "CodeWalkerCLI --gtafolder <path> file export --path <rpfEntryPath> --output <file>", description = "Export a game file (XML when supported, raw fallback)" },
-            new { name = "search", usage = "CodeWalkerCLI --gtafolder <path> search --pattern <text> [--limit <n>]", description = "Search game archive entries" }
+            new { name = "info", usage = "CodeWalker.CLI info", description = "Display application info and command list" },
+            new { name = "version", usage = "CodeWalker.CLI version", description = "Display CodeWalker.CLI and CodeWalker.Core versions" },
+            new { name = "rpf list", usage = "CodeWalker.CLI --gtafolder <path> rpf list", description = "List discovered RPF archives" },
+            new { name = "rpf inspect", usage = "CodeWalker.CLI --gtafolder <path> rpf inspect <stats|files|child|defrag-size|defragment-size (alias)> --archive <archive.rpf> ...", description = "Inspect RPF archive structure and sizes" },
+            new { name = "rpf extract", usage = "CodeWalker.CLI --gtafolder <path> rpf extract [file] --archive <archive.rpf> --entry <entryPath> --output <path>", description = "Extract one file from an RPF archive" },
+            new { name = "rpf extract scripts", usage = "CodeWalker.CLI --gtafolder <path> rpf extract scripts --archive <archive.rpf> --output <path>", description = "Extract .ysc scripts recursively" },
+            new { name = "rpf extract test-all", usage = "CodeWalker.CLI --gtafolder <path> rpf extract test-all --archive <archive.rpf>", description = "Run extraction diagnostics for all archive files" },
+            new { name = "rpf create", usage = "CodeWalker.CLI --gtafolder <path> rpf create <root-archive|archive|directory|file> ... --force true", description = "Create archives/directories/files in RPFs" },
+            new { name = "rpf edit", usage = "CodeWalker.CLI --gtafolder <path> rpf edit <rename-entry|delete-entry> ... --force true", description = "Mutate archive entries" },
+            new { name = "rpf crypto", usage = "CodeWalker.CLI --gtafolder <path> rpf crypto <is-valid|ensure-valid|set> ...", description = "Inspect or update archive encryption" },
+            new { name = "rpf maintenance", usage = "CodeWalker.CLI --gtafolder <path> rpf maintenance <defrag-size|defragment-size (alias)|defragment> ...", description = "Defragmentation and size planning" },
+            new { name = "rpf util", usage = "CodeWalker.CLI rpf util <compress|decompress|flags-from-size|flags-from-blocks|size-from-flags|version-from-flags|page-flags> ...", description = "Invoke RpfFile utility operations" },
+            new { name = "file info", usage = "CodeWalker.CLI file info --path <localFile> OR CodeWalker.CLI --gtafolder <path> file info --path <rpfEntryPath>", description = "Get metadata for local or game files" },
+            new { name = "file export", usage = "CodeWalker.CLI --gtafolder <path> file export --path <rpfEntryPath> --output <file>", description = "Export a game file (XML when supported, raw fallback)" },
+            new { name = "search", usage = "CodeWalker.CLI --gtafolder <path> search --pattern <text> [--limit <n>]", description = "Search game archive entries" }
         };
 
-        return CommandResult.Ok("CodeWalkerCLI command help", new
+        return CommandResult.Ok("CodeWalker.CLI command help", new
         {
-            application = "CodeWalkerCLI",
+            application = "CodeWalker.CLI",
             output = new { @default = "json", alternatives = "xml|text via --format" },
             globalOptions = new[]
             {
@@ -341,7 +341,7 @@ internal sealed class VersionCommand : ICliCommand
 {
     public string Name => "version";
     public string Description => "Display application versions.";
-    public string Usage => "CodeWalkerCLI version";
+    public string Usage => "CodeWalker.CLI version";
 
     public CommandResult Execute(CommandContext context, IReadOnlyList<string> args)
     {
@@ -361,7 +361,7 @@ internal sealed class RpfCommand : ICliCommand
 
     public string Name => "rpf";
     public string Description => "RPF archive commands.";
-    public string Usage => "CodeWalkerCLI --gtafolder <path> rpf <list|inspect|extract|create|edit|crypto|maintenance|util> ...";
+    public string Usage => "CodeWalker.CLI --gtafolder <path> rpf <list|inspect|extract|create|edit|crypto|maintenance|util> ...";
 
     public CommandResult Execute(CommandContext context, IReadOnlyList<string> args)
     {
@@ -403,7 +403,7 @@ internal sealed class RpfCommand : ICliCommand
     {
         if (args.Count == 0)
         {
-            return CommandResult.Error("Missing inspect subcommand.", new { usage = "CodeWalkerCLI --gtafolder <path> rpf inspect <stats|files|child|defrag-size|defragment-size (alias)> ..." });
+            return CommandResult.Error("Missing inspect subcommand.", new { usage = "CodeWalker.CLI --gtafolder <path> rpf inspect <stats|files|child|defrag-size|defragment-size (alias)> ..." });
         }
 
         var options = OptionParser.Parse(args.Skip(1).ToArray());
@@ -570,7 +570,7 @@ internal sealed class RpfCommand : ICliCommand
     {
         if (args.Count == 0)
         {
-            return CommandResult.Error("Missing util subcommand.", new { usage = "CodeWalkerCLI rpf util <compress|decompress|flags-from-size|flags-from-blocks|size-from-flags|version-from-flags|page-flags> ..." });
+            return CommandResult.Error("Missing util subcommand.", new { usage = "CodeWalker.CLI rpf util <compress|decompress|flags-from-size|flags-from-blocks|size-from-flags|version-from-flags|page-flags> ..." });
         }
 
         return args[0].ToLowerInvariant() switch
@@ -674,7 +674,7 @@ internal sealed class RpfCommand : ICliCommand
     {
         if (args.Count == 0)
         {
-            return CommandResult.Error("Missing create subcommand.", new { usage = "CodeWalkerCLI --gtafolder <path> rpf create <root-archive|archive|directory|file> ... --force true" });
+            return CommandResult.Error("Missing create subcommand.", new { usage = "CodeWalker.CLI --gtafolder <path> rpf create <root-archive|archive|directory|file> ... --force true" });
         }
 
         return args[0].ToLowerInvariant() switch
@@ -779,7 +779,7 @@ internal sealed class RpfCommand : ICliCommand
     {
         if (args.Count == 0)
         {
-            return CommandResult.Error("Missing edit subcommand.", new { usage = "CodeWalkerCLI --gtafolder <path> rpf edit <rename-entry|delete-entry> ... --force true" });
+            return CommandResult.Error("Missing edit subcommand.", new { usage = "CodeWalker.CLI --gtafolder <path> rpf edit <rename-entry|delete-entry> ... --force true" });
         }
 
         return args[0].ToLowerInvariant() switch
@@ -836,7 +836,7 @@ internal sealed class RpfCommand : ICliCommand
     {
         if (args.Count == 0)
         {
-            return CommandResult.Error("Missing crypto subcommand.", new { usage = "CodeWalkerCLI --gtafolder <path> rpf crypto <is-valid|ensure-valid|set> ..." });
+            return CommandResult.Error("Missing crypto subcommand.", new { usage = "CodeWalker.CLI --gtafolder <path> rpf crypto <is-valid|ensure-valid|set> ..." });
         }
 
         return args[0].ToLowerInvariant() switch
@@ -904,7 +904,7 @@ internal sealed class RpfCommand : ICliCommand
     {
         if (args.Count == 0)
         {
-            return CommandResult.Error("Missing maintenance subcommand.", new { usage = "CodeWalkerCLI --gtafolder <path> rpf maintenance <defrag-size|defragment-size (alias)|defragment> ..." });
+            return CommandResult.Error("Missing maintenance subcommand.", new { usage = "CodeWalker.CLI --gtafolder <path> rpf maintenance <defrag-size|defragment-size (alias)|defragment> ..." });
         }
 
         return args[0].ToLowerInvariant() switch
@@ -1034,7 +1034,7 @@ internal sealed class FileCommand : ICliCommand
 {
     public string Name => "file";
     public string Description => "Game file commands.";
-    public string Usage => "CodeWalkerCLI file <info|export> ...";
+    public string Usage => "CodeWalker.CLI file <info|export> ...";
 
     public CommandResult Execute(CommandContext context, IReadOnlyList<string> args)
     {
@@ -1181,7 +1181,7 @@ internal sealed class SearchCommand : ICliCommand
 
     public string Name => "search";
     public string Description => "Search for files in game archives.";
-    public string Usage => "CodeWalkerCLI --gtafolder <path> search --pattern <text> [--limit <n>]";
+    public string Usage => "CodeWalker.CLI --gtafolder <path> search --pattern <text> [--limit <n>]";
 
     public CommandResult Execute(CommandContext context, IReadOnlyList<string> args)
     {

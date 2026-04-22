@@ -27,7 +27,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodeWalker.ModManager", "Co
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodeWalker.Gen9Converter", "CodeWalker.Gen9Converter\CodeWalker.Gen9Converter.csproj", "{C099F538-B5F6-4AAF-B877-B0835DE4EFA6}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodeWalkerCLI", "CodeWalkerCLI\CodeWalkerCLI.csproj", "{A6964D96-DEA2-45E1-B7CE-2A010CA1F46B}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodeWalker.CLI", "CodeWalker.CLI\CodeWalker.CLI.csproj", "{A6964D96-DEA2-45E1-B7CE-2A010CA1F46B}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
